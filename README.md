@@ -47,13 +47,19 @@ python server/yolo_api.py &
 ```
 
 ## schematics
-Contains schematics of our system
+Contains schematics and diagrams of our system, as well as 3d printing files for all stages of the project
+
+## data
+Contains various testing data used for reports
 
 ## data_sheets
 Contains data sheets for purchased and used components
 
 # reports
 Contains all of our reports
+
+# Hardware System Visuals & Measurements
+Contains close-up reference images of the system and its assembly
 
 # Videos.zip
 contains a link to demo videos of our final project. Including the zip was 2GB and was taking too long.
