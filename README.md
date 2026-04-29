@@ -55,8 +55,8 @@ Contains data sheets for purchased and used components
 # reports
 Contains all of our reports
 
-# AV_media
-contains videos of our final project
+# Videos.zip
+contains a link to demo videos of our final project. Including the zip was 2GB and was taking too long.
 
 # notebooks
 contains our notebooks
