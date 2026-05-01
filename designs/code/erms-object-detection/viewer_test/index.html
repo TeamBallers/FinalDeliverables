@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PLY Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181c;
+    --border: rgba(255,255,255,0.08);
+    --text: #f0ede8;
+    --muted: #888784;
+    --accent: #c8b89a;
+    --accent2: #7a9ebc;
+    --danger: #c06060;
+    --radius: 8px;
+    --font: 'DM Mono', 'Courier New', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #canvas-container {
+    flex: 1;
+    position: relative;
+    cursor: grab;
+  }
+  #canvas-container:active { cursor: grabbing; }
+
+  canvas { display: block; width: 100% !important; height: 100% !important; }
+
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  #topbar h1 {
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-right: auto;
+  }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 5px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn:hover { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.05); }
+  .btn.active { border-color: var(--accent); color: var(--accent); }
+
+  #file-input { display: none; }
+
+
+  #info-panel {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: rgba(24,24,28,0.85);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 2;
+    backdrop-filter: blur(4px);
+    z-index: 6;
+    display: none;
+  }
+  #info-panel.visible { display: block; }
+  #info-panel strong { color: var(--text); font-weight: 400; }
+
+  #controls-hint {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(24,24,28,0.75);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.9;
+    z-index: 6;
+  }
+
+  #loading {
+    position: absolute;
+    inset: 0;
+    background: rgba(14,14,16,0.7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    z-index: 20;
+    display: none;
+  }
+  #loading.visible { display: flex; }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #shade-btns { display: flex; gap: 6px; }
+
+  .sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>PLY Viewer</h1>
+  <div id="shade-btns">
+    <button class="btn active" data-mode="points">points</button>
+    <button class="btn" data-mode="wireframe">wire</button>
+    <button class="btn" data-mode="solid">solid</button>
+  </div>
+   <div class="sep"></div>
+  <button class="btn" id="reset-btn">reset camera</button>
+  <div class="sep"></div>
+  <!-- <button class="btn" onclick="window.open('https://raspberrypi-6.tailde0fa.ts.net/detection_popup.html', 'detections', 'width=900,height=600')">detections</button> -->
+  <!-- <button class="btn" onclick="window.open('https://raspberrypi-6.tailde0fa.ts.net/viewer/detection_popup.html', 'detections', 'width=900,height=600')">detections</button> -->
+  <button class="btn" onclick="window.open('detection_popup.html', 'detections', 'width=900,height=600')">detections</button>
+
+</div>
+<div id="canvas-container">
+  <canvas id="three-canvas"></canvas>
+
+
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <span style="color: var(--muted); font-size: 12px; letter-spacing: 0.08em;">parsing ply…</span>
+  </div>
+
+  <div id="info-panel">
+    <div>file &nbsp;&nbsp;<strong id="info-name">—</strong></div>
+    <div>vertices &nbsp;&nbsp;<strong id="info-verts">—</strong></div>
+    <div>faces &nbsp;&nbsp;<strong id="info-faces">—</strong></div>
+    <div>has color &nbsp;&nbsp;<strong id="info-color">—</strong></div>
+  </div>
+
+  <div id="controls-hint">
+    orbit — drag &nbsp;&nbsp; zoom — scroll &nbsp;&nbsp; pan — right-drag
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const canvas = document.getElementById('three-canvas');
+const container = document.getElementById('canvas-container');
+const loading = document.getElementById('loading');
+const infoPanel = document.getElementById('info-panel');
+const fileInput = document.getElementById('file-input');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0e0e10, 1);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.001, 1000);
+camera.position.set(0, 0, 3);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xd0c8be, 1.2);
+dirLight.position.set(2, 4, 3);
+scene.add(dirLight);
+const dirLight2 = new THREE.DirectionalLight(0x8aafc8, 0.4);
+dirLight2.position.set(-3, -2, -2);
+scene.add(dirLight2);
+
+const gridHelper = new THREE.GridHelper(4, 20, 0x2a2a2e, 0x1e1e22);
+gridHelper.position.y = -1;
+scene.add(gridHelper);
+
+let currentMesh = null;
+let currentMode = 'points';
+let savedGeometry = null;
+let hasVertexColors = false;
+
+function resize() {
+  const w = container.clientWidth, h = container.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+function buildMesh(geometry, mode) {
+  if (currentMesh) {
+    scene.remove(currentMesh);
+    if (currentMesh.material) currentMesh.material.dispose();
+    currentMesh = null;
+  }
+
+  let mesh;
+  if (mode === 'points') {
+    const mat = new THREE.PointsMaterial({
+      size: 0.004,
+      vertexColors: hasVertexColors,
+      color: hasVertexColors ? 0xffffff : 0xc8b89a,
+      sizeAttenuation: true,
+    });
+    mesh = new THREE.Points(geometry, mat);
+  } else if (mode === 'wireframe') {
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x7a9ebc,
+      wireframe: true,
+    });
+    mesh = new THREE.Mesh(geometry, mat);
+  } else {
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: hasVertexColors,
+      color: hasVertexColors ? 0xffffff : 0xd0c4b0,
+      roughness: 0.65,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+    });
+    mesh = new THREE.Mesh(geometry, mat);
+  }
+
+  scene.add(mesh);
+  currentMesh = mesh;
+}
+
+function centerAndFit(geometry) {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  geometry.translate(-center.x, -center.y, -center.z);
+
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const scale = 2 / maxDim;
+  geometry.scale(scale, scale, scale);
+
+  gridHelper.position.y = -geometry.boundingBox ? 1 : -1;
+}
+
+function parsePLY(buffer) {
+  const text = new TextDecoder().decode(new Uint8Array(buffer, 0, Math.min(2048, buffer.byteLength)));
+  const headerEnd = text.indexOf('end_header');
+  if (headerEnd === -1) throw new Error('invalid PLY: missing end_header');
+
+  const header = text.substring(0, headerEnd);
+  const lines = header.split('\n').map(l => l.trim()).filter(Boolean);
+
+  let vertexCount = 0, faceCount = 0;
+  const vertexProps = [];
+  let inVertex = false, inFace = false;
+  let isBinary = false, isBinaryLE = true;
+
+  for (const line of lines) {
+    if (line.startsWith('format binary_little_endian')) { isBinary = true; isBinaryLE = true; }
+    else if (line.startsWith('format binary_big_endian')) { isBinary = true; isBinaryLE = false; }
+    else if (line.startsWith('element vertex')) { vertexCount = parseInt(line.split(' ')[2]); inVertex = true; inFace = false; }
+    else if (line.startsWith('element face')) { faceCount = parseInt(line.split(' ')[2]); inVertex = false; inFace = true; }
+    else if (line.startsWith('element ')) { inVertex = false; inFace = false; }
+    else if (line.startsWith('property') && inVertex) {
+      const parts = line.split(/\s+/);
+      vertexProps.push({ type: parts[1], name: parts[2] });
+    }
+  }
+
+  const hasX = vertexProps.some(p => p.name === 'x');
+  const hasR = vertexProps.some(p => p.name === 'red' || p.name === 'r');
+  const hasNX = vertexProps.some(p => p.name === 'nx');
+  hasVertexColors = hasR;
+
+  const byteAfterHeader = new TextEncoder().encode(header + 'end_header\n').length;
+
+  if (!isBinary) {
+    return parsePLYAscii(buffer, byteAfterHeader, vertexCount, faceCount, vertexProps, hasR, hasNX);
+  } else {
+    return parsePLYBinary(buffer, byteAfterHeader, vertexCount, faceCount, vertexProps, hasR, hasNX, isBinaryLE);
+  }
+}
+
+const TYPE_SIZES = { char: 1, uchar: 1, short: 2, ushort: 2, int: 4, uint: 4, float: 4, double: 8, int8: 1, uint8: 1, int16: 2, uint16: 2, int32: 4, uint32: 4, float32: 4, float64: 8 };
+
+function readValue(view, offset, type, le) {
+  switch (type) {
+    case 'float': case 'float32': return { val: view.getFloat32(offset, le), size: 4 };
+    case 'double': case 'float64': return { val: view.getFloat64(offset, le), size: 8 };
+    case 'int': case 'int32': return { val: view.getInt32(offset, le), size: 4 };
+    case 'uint': case 'uint32': return { val: view.getUint32(offset, le), size: 4 };
+    case 'short': case 'int16': return { val: view.getInt16(offset, le), size: 2 };
+    case 'ushort': case 'uint16': return { val: view.getUint16(offset, le), size: 2 };
+    case 'char': case 'int8': return { val: view.getInt8(offset), size: 1 };
+    case 'uchar': case 'uint8': return { val: view.getUint8(offset), size: 1 };
+    default: return { val: 0, size: 1 };
+  }
+}
+
+function parsePLYBinary(buffer, dataStart, vertexCount, faceCount, props, hasColors, hasNormals, le) {
+  const view = new DataView(buffer);
+  let offset = dataStart;
+
+  const positions = new Float32Array(vertexCount * 3);
+  const colors = hasColors ? new Float32Array(vertexCount * 3) : null;
+
+  for (let i = 0; i < vertexCount; i++) {
+    const vals = {};
+    for (const p of props) {
+      const r = readValue(view, offset, p.type, le);
+      vals[p.name] = r.val;
+      offset += r.size;
+    }
+    positions[i * 3] = vals.x || 0;
+    positions[i * 3 + 1] = vals.y || 0;
+    positions[i * 3 + 2] = vals.z || 0;
+    if (hasColors && colors) {
+      const R = vals.red ?? vals.r ?? 200;
+      const G = vals.green ?? vals.g ?? 180;
+      const B = vals.blue ?? vals.b ?? 160;
+      colors[i * 3] = R / 255;
+      colors[i * 3 + 1] = G / 255;
+      colors[i * 3 + 2] = B / 255;
+    }
+  }
+
+  const indices = [];
+  for (let i = 0; i < faceCount; i++) {
+    const listCount = view.getUint8(offset); offset += 1;
+    const face = [];
+    for (let j = 0; j < listCount; j++) {
+      const r = readValue(view, offset, 'uint', le);
+      face.push(r.val); offset += r.size;
+    }
+    if (face.length === 3) { indices.push(face[0], face[1], face[2]); }
+    else if (face.length === 4) { indices.push(face[0], face[1], face[2], face[0], face[2], face[3]); }
+  }
+
+  return { positions, colors, indices, vertexCount, faceCount };
+}
+
+function parsePLYAscii(buffer, dataStart, vertexCount, faceCount, props, hasColors, hasNormals) {
+  const text = new TextDecoder().decode(buffer);
+  const afterHeader = text.indexOf('end_header\n') + 'end_header\n'.length;
+  const lines = text.substring(afterHeader).split('\n');
+
+  const positions = new Float32Array(vertexCount * 3);
+  const colors = hasColors ? new Float32Array(vertexCount * 3) : null;
+
+  const propNames = props.map(p => p.name);
+
+  for (let i = 0; i < vertexCount; i++) {
+    const parts = lines[i].trim().split(/\s+/);
+    const vals = {};
+    propNames.forEach((n, j) => vals[n] = parseFloat(parts[j]));
+
+    positions[i * 3] = vals.x || 0;
+    positions[i * 3 + 1] = vals.y || 0;
+    positions[i * 3 + 2] = vals.z || 0;
+    if (hasColors && colors) {
+      colors[i * 3] = (vals.red ?? vals.r ?? 200) / 255;
+      colors[i * 3 + 1] = (vals.green ?? vals.g ?? 180) / 255;
+      colors[i * 3 + 2] = (vals.blue ?? vals.b ?? 160) / 255;
+    }
+  }
+
+  const indices = [];
+  for (let i = 0; i < faceCount; i++) {
+    const parts = lines[vertexCount + i].trim().split(/\s+/).map(Number);
+    const count = parts[0];
+    if (count === 3) { indices.push(parts[1], parts[2], parts[3]); }
+    else if (count === 4) { indices.push(parts[1], parts[2], parts[3], parts[1], parts[3], parts[4]); }
+  }
+
+  return { positions, colors, indices, vertexCount, faceCount };
+}
+
+function loadPLY(buffer, fileName) {
+  loading.classList.add('visible');
+  setTimeout(() => {
+    try {
+      const { positions, colors, indices, vertexCount, faceCount } = parsePLY(buffer);
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      if (colors) geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      if (indices.length > 0) geo.setIndex(indices);
+      geo.computeVertexNormals();
+
+      centerAndFit(geo);
+      savedGeometry = geo;
+
+      buildMesh(geo, currentMode);
+      resetCamera();
+
+      document.getElementById('info-name').textContent = fileName;
+      document.getElementById('info-verts').textContent = vertexCount.toLocaleString();
+      document.getElementById('info-faces').textContent = faceCount > 0 ? faceCount.toLocaleString() : '—';
+      document.getElementById('info-color').textContent = hasVertexColors ? 'yes' : 'no';
+
+      infoPanel.classList.add('visible');
+    } catch (e) {
+      alert('Could not parse PLY: ' + e.message);
+    } finally {
+      loading.classList.remove('visible');
+    }
+  }, 30);
+}
+
+function resetCamera() {
+  orbitState.phi = Math.PI / 4;
+  orbitState.theta = -Math.PI / 6;
+  orbitState.radius = 3;
+  orbitState.panX = 0;
+  orbitState.panY = 0;
+  updateCamera();
+}
+
+const orbitState = {
+  phi: Math.PI / 4,
+  theta: -Math.PI / 6,
+  radius: 3,
+  panX: 0,
+  panY: 0,
+};
+
+function updateCamera() {
+  const x = orbitState.radius * Math.sin(orbitState.phi) * Math.sin(orbitState.theta);
+  const y = orbitState.radius * Math.cos(orbitState.phi);
+  const z = orbitState.radius * Math.sin(orbitState.phi) * Math.cos(orbitState.theta);
+  camera.position.set(x + orbitState.panX, y + orbitState.panY, z);
+  camera.lookAt(orbitState.panX, orbitState.panY, 0);
+}
+updateCamera();
+
+let mouse = { down: false, button: 0, lastX: 0, lastY: 0 };
+
+container.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.button = e.button;
+  mouse.lastX = e.clientX;
+  mouse.lastY = e.clientY;
+  e.preventDefault();
+});
+window.addEventListener('mouseup', () => { mouse.down = false; });
+window.addEventListener('mousemove', e => {
+  if (!mouse.down) return;
+  const dx = e.clientX - mouse.lastX;
+  const dy = e.clientY - mouse.lastY;
+  mouse.lastX = e.clientX;
+  mouse.lastY = e.clientY;
+
+  if (mouse.button === 0) {
+    orbitState.theta -= dx * 0.008;
+    orbitState.phi = Math.max(0.05, Math.min(Math.PI - 0.05, orbitState.phi - dy * 0.008));
+  } else if (mouse.button === 2) {
+    const speed = orbitState.radius * 0.001;
+    orbitState.panX -= dx * speed;
+    orbitState.panY += dy * speed;
+  }
+  updateCamera();
+});
+container.addEventListener('contextmenu', e => e.preventDefault());
+
+container.addEventListener('wheel', e => {
+  orbitState.radius = Math.max(0.1, Math.min(50, orbitState.radius * (1 + e.deltaY * 0.001)));
+  updateCamera();
+  e.preventDefault();
+}, { passive: false });
+
+container.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    mouse.down = true;
+    mouse.button = 0;
+    mouse.lastX = e.touches[0].clientX;
+    mouse.lastY = e.touches[0].clientY;
+  }
+});
+container.addEventListener('touchmove', e => {
+  if (!mouse.down || e.touches.length !== 1) return;
+  const dx = e.touches[0].clientX - mouse.lastX;
+  const dy = e.touches[0].clientY - mouse.lastY;
+  mouse.lastX = e.touches[0].clientX;
+  mouse.lastY = e.touches[0].clientY;
+  orbitState.theta -= dx * 0.008;
+  orbitState.phi = Math.max(0.05, Math.min(Math.PI - 0.05, orbitState.phi - dy * 0.008));
+  updateCamera();
+  e.preventDefault();
+}, { passive: false });
+container.addEventListener('touchend', () => { mouse.down = false; });
+
+fetch('model.ply')
+  .then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.arrayBuffer();
+  })
+  .then(buf => loadPLY(buf, 'model.ply'))
+  .catch(err => {
+    loading.classList.remove('visible');
+    alert('Could not load model.ply — make sure it is in the same folder as this HTML file.\n\n' + err.message);
+  });
+
+document.getElementById('reset-btn').addEventListener('click', resetCamera);
+
+document.querySelectorAll('[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentMode = btn.dataset.mode;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (savedGeometry) buildMesh(savedGeometry, currentMode);
+  });
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+yolo_env/
+
+# YOLO outputs (IMPORTANT)
+runs/
+
+# Images / test data
+*.jpg
+*.jpeg
+*.png
+
+# OS files
+.DS_Store

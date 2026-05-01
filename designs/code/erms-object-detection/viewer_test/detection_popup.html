@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detection Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181c;
+    --border: rgba(255,255,255,0.08);
+    --text: #f0ede8;
+    --muted: #888784;
+    --accent: #c8b89a;
+    --radius: 8px;
+    --font: 'DM Mono', 'Courier New', monospace;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    height: 100vh;
+    /* display: flex; */
+    margin: 0;
+    height: 100vh;
+    flex-direction: column;
+    /* overflow: hidden;  */
+    overflow: auto;
+  }
+
+  #topbar {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  #topbar h1 {
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-right: auto;
+  }
+  .btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 5px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn:hover { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.05); }
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #6dbf8a;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+  .sep { width: 1px; height: 18px; background: var(--border); }
+  #count { background: rgba(200,184,154,0.12); border: 1px solid rgba(200,184,154,0.2); color: var(--accent); font-size: 11px; padding: 3px 10px; border-radius: var(--radius); }
+  #main { flex: 1; display: flex; overflow: hidden; }
+  #grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    align-content: start;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card img { width: 100%; height: auto; object-fit: contain; display: block; background: #111; }
+  .card-info { padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .card-time { color: var(--muted); font-size: 11px; }
+  #sidebar {
+    width: 290px;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  #sidebar-header { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+  #log { flex: 1; overflow-y: auto; }
+  .log-item { padding: 6px 14px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .log-label { color: var(--text); font-size: 12px; }
+  .log-time { color: var(--muted); font-size: 10px; }
+  #notif {
+    position: fixed;
+    top: 56px;
+    right: 16px;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 12px;
+    z-index: 100;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+  #notif.show { opacity: 1; transform: translateY(0); }
+  #notif-title { color: var(--accent); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Object Detection</h1>
+  <div class="live-dot"></div>
+  <span style="color:var(--muted);font-size:11px;">live</span>
+  <div class="sep"></div>
+  <span id="count">0 detections</span>
+  <div class="sep"></div>
+  <button class="btn" onclick="clearAll()">clear</button>
+</div>
+
+<div id="main">
+  <div id="grid"></div>
+  <div id="sidebar">
+    <div id="sidebar-header">log</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<div id="notif">
+  <div id="notif-title">new detection</div>
+  <div id="notif-body"></div>
+</div>
+
+<script>
+const SERVER = "http://100.112.38.70:8000"; //would need to change this to ur own IP
+const POLL_MS = 2000;
+
+let known = new Set();
+let total = 0;
+
+function addCard(url, filename) {
+  const grid = document.getElementById('grid');
+
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  card.innerHTML = `
+    <img src="${SERVER}${url}" loading="lazy">
+    <div class="card-info">
+      <div class="card-time">${filename}</div>
+    </div>
+  `;
+
+  grid.prepend(card);
+}
+
+function addLog(filename) {
+  const log = document.getElementById('log');
+
+  const item = document.createElement('div');
+  item.className = 'log-item';
+  item.innerHTML = `<div class="log-label">${filename}</div>`;
+
+  log.prepend(item);
+}
+
+function notify(text) {
+  const n = document.getElementById('notif');
+  document.getElementById('notif-body').textContent = text;
+
+  n.classList.add('show');
+  setTimeout(() => n.classList.remove('show'), 2500);
+}
+
+function poll() {
+  console.log("FETCHING /images...");
+
+  fetch(`${SERVER}/images`)
+    .then(r => r.json())
+    .then(files => {
+      console.log("DATA:", files);
+
+      files.forEach(f => {
+        if (!known.has(f.filename)) {
+          known.add(f.filename);
+          total++;
+
+          addCard(f.url, f.filename);
+          addLog(f.filename);
+          notify(f.filename);
+
+          document.getElementById('count').textContent =
+            `${total} detection${total !== 1 ? 's' : ''}`;
+        }
+      });
+    })
+    .catch(err => console.log("ERROR:", err));
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
